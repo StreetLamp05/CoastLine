@@ -159,9 +159,143 @@ def run_simulation(
             str(current_age + 10): round(needed_salary),
         }
 
+    # "Never retire" analysis — when both goal and predicted FIRE are N/A,
+    # compute specific levers that would make predicted FIRE achievable.
+    never_retire_analysis = None
+    if goal_age is None and predicted_age is None:
+        peak_nw = float(np.max(median))
+        peak_age = current_age + int(np.argmax(median))
+        monthly_surplus_now = (
+            annual_salary * 0.72 / 12
+            - monthly_expenses
+            - monthly_debt_payments
+            + annual_salary * (employer_match_pct / 100) / 12
+        )
+
+        # 1. How much extra monthly savings would make predicted FIRE work?
+        # Binary search: run quick simulations with extra savings
+        extra_needed = None
+        for extra in range(100, 5100, 100):
+            test_paths = np.zeros((200, years + 1))
+            test_paths[:, 0] = max(starting_nw, 0)
+            test_debt = total_debt
+            test_returns = np.random.normal(mean_return, std_return, (200, years))
+            for y in range(years):
+                age = current_age + y
+                sal = salary_by_age.get(age, annual_salary)
+                take_home = sal * 0.72 / 12
+                adj_exp = monthly_expenses * ((1 + inflation_rate) ** y)
+                emp_match = sal * (employer_match_pct / 100) / 12
+                debt_pmt = 0
+                if test_debt > 0:
+                    debt_pmt = monthly_debt_payments
+                    test_debt = max(0, test_debt - monthly_debt_payments * 12 * 0.6)
+                net = take_home - adj_exp - debt_pmt + emp_match + extra
+                if net < 0:
+                    test_paths[:, y + 1] = np.maximum(test_paths[:, y] + net * 12, 0)
+                else:
+                    test_paths[:, y + 1] = np.maximum(
+                        test_paths[:, y] * (1 + test_returns[:, y]) + net * 12, 0
+                    )
+            test_median = np.percentile(test_paths, 50, axis=0)
+            if any(v >= predicted_fire_target for v in test_median):
+                extra_needed = extra
+                # Find the age at which this crosses
+                for i, v in enumerate(test_median):
+                    if v >= predicted_fire_target:
+                        extra_retire_age = current_age + i
+                        break
+                break
+
+        # 2. How much expense reduction would help?
+        expense_cut_needed = None
+        for cut in range(100, 2100, 100):
+            test_exp = monthly_expenses - cut
+            if test_exp < 500:
+                break
+            test_paths2 = np.zeros((200, years + 1))
+            test_paths2[:, 0] = max(starting_nw, 0)
+            test_debt2 = total_debt
+            test_returns2 = np.random.normal(mean_return, std_return, (200, years))
+            # Also recalculate predicted target with lower expenses
+            lower_predicted_target = 25 * max(predicted_monthly_retirement_income - cut * 0.5, 1000) * 12
+            for y in range(years):
+                age = current_age + y
+                sal = salary_by_age.get(age, annual_salary)
+                take_home = sal * 0.72 / 12
+                adj_exp = test_exp * ((1 + inflation_rate) ** y)
+                emp_match = sal * (employer_match_pct / 100) / 12
+                debt_pmt = 0
+                if test_debt2 > 0:
+                    debt_pmt = monthly_debt_payments
+                    test_debt2 = max(0, test_debt2 - monthly_debt_payments * 12 * 0.6)
+                net = take_home - adj_exp - debt_pmt + emp_match
+                if net < 0:
+                    test_paths2[:, y + 1] = np.maximum(test_paths2[:, y] + net * 12, 0)
+                else:
+                    test_paths2[:, y + 1] = np.maximum(
+                        test_paths2[:, y] * (1 + test_returns2[:, y]) + net * 12, 0
+                    )
+            test_median2 = np.percentile(test_paths2, 50, axis=0)
+            if any(v >= lower_predicted_target for v in test_median2):
+                expense_cut_needed = cut
+                for i, v in enumerate(test_median2):
+                    if v >= lower_predicted_target:
+                        cut_retire_age = current_age + i
+                        break
+                break
+
+        # 3. How much extra income would help?
+        income_boost_needed = None
+        for boost in range(5000, 80001, 5000):
+            test_paths3 = np.zeros((200, years + 1))
+            test_paths3[:, 0] = max(starting_nw, 0)
+            test_debt3 = total_debt
+            test_returns3 = np.random.normal(mean_return, std_return, (200, years))
+            for y in range(years):
+                age = current_age + y
+                sal = salary_by_age.get(age, annual_salary) + boost
+                take_home = sal * 0.72 / 12
+                adj_exp = monthly_expenses * ((1 + inflation_rate) ** y)
+                emp_match = sal * (employer_match_pct / 100) / 12
+                debt_pmt = 0
+                if test_debt3 > 0:
+                    debt_pmt = monthly_debt_payments
+                    test_debt3 = max(0, test_debt3 - monthly_debt_payments * 12 * 0.6)
+                net = take_home - adj_exp - debt_pmt + emp_match
+                if net < 0:
+                    test_paths3[:, y + 1] = np.maximum(test_paths3[:, y] + net * 12, 0)
+                else:
+                    test_paths3[:, y + 1] = np.maximum(
+                        test_paths3[:, y] * (1 + test_returns3[:, y]) + net * 12, 0
+                    )
+            test_median3 = np.percentile(test_paths3, 50, axis=0)
+            if any(v >= predicted_fire_target for v in test_median3):
+                income_boost_needed = boost
+                for i, v in enumerate(test_median3):
+                    if v >= predicted_fire_target:
+                        boost_retire_age = current_age + i
+                        break
+                break
+
+        never_retire_analysis = {
+            "peak_net_worth": round(peak_nw, 2),
+            "peak_age": peak_age,
+            "monthly_surplus": round(monthly_surplus_now, 2),
+            "predicted_target": round(predicted_fire_target, 2),
+            "shortfall": round(predicted_fire_target - peak_nw, 2),
+            "extra_savings_needed": extra_needed,
+            "extra_savings_retire_age": extra_retire_age if extra_needed else None,
+            "expense_cut_needed": expense_cut_needed,
+            "expense_cut_retire_age": cut_retire_age if expense_cut_needed else None,
+            "income_boost_needed": income_boost_needed,
+            "income_boost_retire_age": boost_retire_age if income_boost_needed else None,
+        }
+
     return {
         "percentiles": percentiles,
         "fire_milestones": fire_milestones,
         "retirement_readiness_score": score,
         "gap_analysis": gap_analysis,
+        "never_retire_analysis": never_retire_analysis,
     }

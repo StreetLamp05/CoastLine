@@ -87,6 +87,20 @@ export interface FireResult {
   predicted_achievable: boolean;
 }
 
+export interface NeverRetireAnalysis {
+  peak_net_worth: number;
+  peak_age: number;
+  monthly_surplus: number;
+  predicted_target: number;
+  shortfall: number;
+  extra_savings_needed: number | null;
+  extra_savings_retire_age: number | null;
+  expense_cut_needed: number | null;
+  expense_cut_retire_age: number | null;
+  income_boost_needed: number | null;
+  income_boost_retire_age: number | null;
+}
+
 export interface SimulationResult {
   percentiles: {
     p10: { age: number; net_worth: number }[];
@@ -98,6 +112,7 @@ export interface SimulationResult {
   fire_milestones: FireResult;
   retirement_readiness_score: number;
   gap_analysis: Record<string, any>;
+  never_retire_analysis: NeverRetireAnalysis | null;
 }
 
 export interface DebtPayoffResult {

@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { runSimulation } from '@/lib/api';
-import type { FullProfile, SimulationResult } from '@/lib/types';
+import type { FullProfile, SimulationResult, NeverRetireAnalysis, Profile } from '@/lib/types';
 import { lifestyleTotalMonthly } from '@/lib/types';
+import { AlertTriangle, TrendingUp, Scissors, DollarSign, ArrowRight } from 'lucide-react';
 import FanChart from '@/components/charts/FanChart';
 import careerPaths from '@/data/career_paths.json';
 import type { CareerPaths } from '@/lib/types';
@@ -20,6 +21,131 @@ function buildSalaryProgression(profile: FullProfile['profile']) {
     age: profile.current_age + level.years_range[0],
     salary: level.median,
   }));
+}
+
+function NeverRetireSection({ analysis, profile }: { analysis: NeverRetireAnalysis | null; profile: Profile }) {
+  if (!analysis) {
+    return (
+      <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6 text-center">
+        <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-3" />
+        <p className="text-lg font-semibold text-red-800 mb-1">Retirement is not achievable</p>
+        <p className="text-sm text-red-600">
+          On your current trajectory, you won&apos;t accumulate enough to retire at either lifestyle level.
+          Use the What If sliders below to explore changes.
+        </p>
+      </div>
+    );
+  }
+
+  const { peak_net_worth, peak_age, monthly_surplus, predicted_target, shortfall } = analysis;
+
+  const options = [
+    analysis.extra_savings_needed && {
+      icon: DollarSign,
+      color: 'emerald',
+      title: `Save $${analysis.extra_savings_needed.toLocaleString()} more per month`,
+      desc: `Putting aside an extra $${analysis.extra_savings_needed}/mo — through a side gig, automated transfers, or cutting discretionary spending — could let you retire at ${analysis.extra_savings_retire_age}.`,
+      age: analysis.extra_savings_retire_age,
+    },
+    analysis.expense_cut_needed && {
+      icon: Scissors,
+      color: 'blue',
+      title: `Cut $${analysis.expense_cut_needed.toLocaleString()}/mo from expenses`,
+      desc: `Reducing your monthly expenses by $${analysis.expense_cut_needed} (e.g., cheaper housing, cooking more, fewer subscriptions) lowers both your current burn and your retirement target — potentially retiring at ${analysis.expense_cut_retire_age}.`,
+      age: analysis.expense_cut_retire_age,
+    },
+    analysis.income_boost_needed && {
+      icon: TrendingUp,
+      color: 'purple',
+      title: `Earn $${analysis.income_boost_needed.toLocaleString()}/yr more`,
+      desc: `A $${(analysis.income_boost_needed / 1000).toFixed(0)}k salary bump — through a promotion, job switch, or additional certification — could put retirement at ${analysis.income_boost_retire_age} within reach.`,
+      age: analysis.income_boost_retire_age,
+    },
+  ].filter(Boolean) as { icon: any; color: string; title: string; desc: string; age: number | null }[];
+
+  const colorClasses: Record<string, { bg: string; border: string; icon: string; title: string }> = {
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-300', icon: 'text-emerald-600', title: 'text-emerald-800' },
+    blue: { bg: 'bg-blue-50', border: 'border-blue-300', icon: 'text-blue-600', title: 'text-blue-800' },
+    purple: { bg: 'bg-purple-50', border: 'border-purple-300', icon: 'text-purple-600', title: 'text-purple-800' },
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Warning banner */}
+      <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6">
+        <div className="flex items-start gap-4">
+          <AlertTriangle className="w-8 h-8 text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-lg font-semibold text-red-800 mb-2">
+              Retirement is not achievable on your current path
+            </p>
+            <div className="grid sm:grid-cols-3 gap-4 mt-3">
+              <div>
+                <p className="text-xs text-red-500">Peak net worth</p>
+                <p className="text-xl font-bold text-red-800">${(peak_net_worth / 1000).toFixed(0)}k</p>
+                <p className="text-xs text-red-400">at age {peak_age}</p>
+              </div>
+              <div>
+                <p className="text-xs text-red-500">Target needed</p>
+                <p className="text-xl font-bold text-red-800">${(predicted_target / 1000).toFixed(0)}k</p>
+                <p className="text-xs text-red-400">for predicted lifestyle</p>
+              </div>
+              <div>
+                <p className="text-xs text-red-500">Shortfall</p>
+                <p className="text-xl font-bold text-red-800">${(shortfall / 1000).toFixed(0)}k</p>
+                <p className="text-xs text-red-400">
+                  {monthly_surplus < 0
+                    ? `currently -$${Math.abs(monthly_surplus).toFixed(0)}/mo deficit`
+                    : `only $${monthly_surplus.toFixed(0)}/mo surplus`}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Actionable options */}
+      {options.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Here&apos;s what could change that:</h4>
+          <div className="space-y-3">
+            {options.map((opt, i) => {
+              const c = colorClasses[opt.color];
+              return (
+                <div key={i} className={`rounded-xl border-2 p-5 ${c.bg} ${c.border}`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`p-2 rounded-lg ${c.bg}`}>
+                      <opt.icon className={`w-5 h-5 ${c.icon}`} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className={`font-semibold ${c.title}`}>{opt.title}</p>
+                        {opt.age && (
+                          <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${c.bg} ${c.title} border ${c.border}`}>
+                            Retire at {opt.age}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">{opt.desc}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {options.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+          <p className="text-sm text-yellow-700">
+            The gap is significant. Consider combining multiple strategies — increasing income, reducing
+            expenses, and boosting savings simultaneously. Use the What If sliders below to model scenarios.
+          </p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function TabFire({ data }: { data: FullProfile }) {
@@ -169,12 +295,7 @@ export default function TabFire({ data }: { data: FullProfile }) {
       )}
 
       {fm && !fm.goal_achievable && !fm.predicted_achievable && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-          <p className="text-sm text-red-700">
-            Neither your goal nor predicted retirement lifestyle is achievable on your current trajectory.
-            Use the sliders below to explore what changes could make retirement possible.
-          </p>
-        </div>
+        <NeverRetireSection analysis={sim?.never_retire_analysis ?? null} profile={profile} />
       )}
 
       {/* What-If Sliders */}
