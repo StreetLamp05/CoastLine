@@ -53,11 +53,12 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // We store the Recharts internal coordinate system so we can map data <-> pixels
-  const chartLayoutRef = useRef<{
+  // Pixel layout as state so updating it triggers a re-render of the dot overlay.
+  // Domain values (min/max age/salary) are read live from component scope.
+  const [pixelLayout, setPixelLayout] = useState<{
     left: number; right: number; top: number; bottom: number;
-    xMin: number; xMax: number; yMin: number; yMax: number;
   } | null>(null);
+  const pixelLayoutRef = useRef(pixelLayout);
 
   // Compute chart domains (include benchmark salaries for Y range)
   const allSalaries = [
@@ -77,7 +78,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
     if (pts.length === 0) return undefined;
     if (age < pts[0].age) return pts[0].salary;
 
-    // Find which milestone we're in
     let base = pts[0];
     for (let i = pts.length - 1; i >= 0; i--) {
       if (age >= pts[i].age) {
@@ -104,7 +104,7 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
     return val;
   };
 
-  // Build chart data: user line (step + raise) and benchmark lines (flat step)
+  // Build chart data
   const interpolated: Record<string, number>[] = [];
   for (let age = minAge; age <= maxAge; age++) {
     const row: Record<string, number> = {
@@ -130,58 +130,59 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
     });
   });
 
-  // Capture the recharts plot area bounds from the CartesianGrid element
+  // Capture only the pixel layout of the plot area (stable across data changes).
+  // setPixelLayout triggers a re-render so dots appear in the right place on load.
   const captureChartBounds = useCallback(() => {
     if (!containerRef.current) return;
     const grid = containerRef.current.querySelector('.recharts-cartesian-grid');
     if (!grid) return;
     const containerRect = containerRef.current.getBoundingClientRect();
     const gridRect = grid.getBoundingClientRect();
-    chartLayoutRef.current = {
+    const layout = {
       left: gridRect.left - containerRect.left,
       right: gridRect.right - containerRect.left,
       top: gridRect.top - containerRect.top,
       bottom: gridRect.bottom - containerRect.top,
-      xMin: minAge,
-      xMax: maxAge,
-      yMin: minSalary,
-      yMax: maxSalary,
     };
-  }, [minAge, maxAge, minSalary, maxSalary]);
+    pixelLayoutRef.current = layout;
+    setPixelLayout(layout);
+  }, []);
 
-  // Recapture on resize
+  // Capture on mount and resize
   useEffect(() => {
     captureChartBounds();
     window.addEventListener('resize', captureChartBounds);
     return () => window.removeEventListener('resize', captureChartBounds);
-  }, [captureChartBounds, points]);
+  }, [captureChartBounds]);
 
-  // Also capture after first render / data change with a slight delay (recharts animation)
+  // Re-capture after first paint (Recharts needs one render to size the grid)
   useEffect(() => {
     const t = setTimeout(captureChartBounds, 100);
     return () => clearTimeout(t);
-  }, [captureChartBounds, interpolated.length]);
+  }, [captureChartBounds]);
 
-  // Map data coords to pixel coords relative to container
+  // dataToPixel reads from state so the SVG overlay re-renders when bounds are captured.
+  // Domain values read live so dots reposition instantly when career path changes.
   const dataToPixel = (age: number, salary: number) => {
-    const layout = chartLayoutRef.current;
+    const layout = pixelLayout;
     if (!layout) return { x: 0, y: 0 };
-    const xPct = (age - layout.xMin) / (layout.xMax - layout.xMin);
-    const yPct = (salary - layout.yMin) / (layout.yMax - layout.yMin);
+    const xPct = (age - minAge) / (maxAge - minAge);
+    const yPct = (salary - minSalary) / (maxSalary - minSalary);
     return {
       x: layout.left + xPct * (layout.right - layout.left),
       y: layout.bottom - yPct * (layout.bottom - layout.top),
     };
   };
 
+  // pixelToData reads from ref for sync drag access.
   const pixelToData = (px: number, py: number) => {
-    const layout = chartLayoutRef.current;
+    const layout = pixelLayoutRef.current;
     if (!layout) return { age: currentAge, salary: 0 };
     const xPct = (px - layout.left) / (layout.right - layout.left);
     const yPct = 1 - (py - layout.top) / (layout.bottom - layout.top);
     return {
-      age: Math.round(layout.xMin + xPct * (layout.xMax - layout.xMin)),
-      salary: Math.round((layout.yMin + yPct * (layout.yMax - layout.yMin)) / 1000) * 1000,
+      age: Math.round(minAge + xPct * (maxAge - minAge)),
+      salary: Math.round((minSalary + yPct * (maxSalary - minSalary)) / 1000) * 1000,
     };
   };
 
@@ -203,7 +204,8 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
       const relX = e.clientX - containerRect.left;
       const relY = e.clientY - containerRect.top;
       const { age, salary } = pixelToData(relX, relY);
-      const clampedAge = Math.max(currentAge, Math.min(85, age));
+      const isFirstPoint = points[activeIndex].age === Math.min(...points.map((p) => p.age));
+      const clampedAge = isFirstPoint ? currentAge : Math.max(currentAge, Math.min(85, age));
 
       const updated = [...points];
       updated[activeIndex] = { ...updated[activeIndex], age: clampedAge, salary: Math.max(0, salary) };
@@ -233,8 +235,7 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
       const relY = e.clientY - containerRect.top;
       const { age, salary } = pixelToData(relX, relY);
 
-      // Don't add if outside plot area or too close to existing point
-      const layout = chartLayoutRef.current;
+      const layout = pixelLayoutRef.current;
       if (!layout) return;
       if (relX < layout.left || relX > layout.right || relY < layout.top || relY > layout.bottom) return;
       if (points.some((p) => Math.abs(p.age - age) < 2)) return;
@@ -285,7 +286,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
           className="relative h-80"
           style={{ userSelect: 'none' }}
         >
-          {/* Recharts line chart (no dots — we render our own) */}
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={interpolated}
@@ -317,6 +317,7 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                 dot={false}
                 activeDot={false}
                 name="Your Path"
+                isAnimationActive={false}
               />
               {benchmarkLines.map((bl, idx) => (
                 <Line
@@ -329,6 +330,7 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                   dot={false}
                   activeDot={false}
                   name={bl.label}
+                  isAnimationActive={false}
                 />
               ))}
               {benchmarkLines.length > 0 && <Legend wrapperStyle={{ fontSize: 12 }} />}
@@ -357,7 +359,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
 
               return (
                 <g key={i} style={{ pointerEvents: 'auto' }}>
-                  {/* Larger invisible hit area */}
                   <circle
                     cx={pos.x}
                     cy={pos.y}
@@ -368,7 +369,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                     onMouseEnter={() => setHoverIndex(i)}
                     onMouseLeave={() => setHoverIndex(null)}
                   />
-                  {/* Outer glow ring */}
                   <circle
                     cx={pos.x}
                     cy={pos.y}
@@ -379,7 +379,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                     opacity={isActive || isHover ? 0.5 : 0}
                     style={{ transition: 'opacity 0.15s, r 0.15s' }}
                   />
-                  {/* Main dot */}
                   <circle
                     cx={pos.x}
                     cy={pos.y}
@@ -396,11 +395,9 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                     onMouseEnter={() => setHoverIndex(i)}
                     onMouseLeave={() => setHoverIndex(null)}
                   />
-                  {/* Grip icon inside dot (two vertical lines) */}
                   <line x1={pos.x - 3} y1={pos.y - 4} x2={pos.x - 3} y2={pos.y + 4} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
                   <line x1={pos.x} y1={pos.y - 4} x2={pos.x} y2={pos.y + 4} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
                   <line x1={pos.x + 3} y1={pos.y - 4} x2={pos.x + 3} y2={pos.y + 4} stroke="#fff" strokeWidth={1.5} strokeLinecap="round" style={{ pointerEvents: 'none' }} />
-                  {/* Label above dot */}
                   <text
                     x={pos.x}
                     y={pos.y - r - 8}
@@ -412,18 +409,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                   >
                     {point.label || `Age ${point.age}`}
                   </text>
-                  {/* Salary below dot */}
-                  <text
-                    x={pos.x}
-                    y={pos.y + r + 16}
-                    textAnchor="middle"
-                    fill="#6b7280"
-                    fontSize={11}
-                    fontWeight={500}
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {formatSalary(point.salary)}
-                  </text>
                 </g>
               );
             })}
@@ -433,7 +418,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
               const pos = dataToPixel(bl.age, bl.salary);
               return (
                 <g key={`bl-${i}`} style={{ pointerEvents: 'none' }}>
-                  {/* Small diamond marker at transition */}
                   <rect
                     x={pos.x - 4}
                     y={pos.y - 4}
@@ -443,7 +427,6 @@ export default function CareerProgressionChart({ points, onChange, currentAge, b
                     fill={bl.color}
                     transform={`rotate(45 ${pos.x} ${pos.y})`}
                   />
-                  {/* Level label */}
                   <text
                     x={pos.x + 8}
                     y={pos.y - 6}
