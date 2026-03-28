@@ -116,7 +116,7 @@ function DashboardContent() {
 
       {/* Tab Content */}
       <main className="max-w-6xl mx-auto px-6 py-8">
-        {activeTab === 'Overview' && <TabOverview data={data} />}
+        {activeTab === 'Overview' && <TabOverview data={data} onSaved={loadProfile} />}
         {activeTab === 'Career Path' && <TabCareerPath data={data} onSaved={loadProfile} />}
         {activeTab === 'Lifetime Cashflow' && <TabLifetimeCashflow data={data} />}
         {activeTab === 'Retirement Lifestyle' && <TabRetirementLifestyle data={data} onSaved={loadProfile} />}

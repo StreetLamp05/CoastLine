@@ -173,6 +173,8 @@ export interface LifetimeCashflowPoint {
   takeHome: number;
   employerMatch: number;
   spending: number;
+  goalSpending: number;
+  predictedSpending: number;
   debtPayments: number;
   netSavings: number;
   cumulativeSavings: number;

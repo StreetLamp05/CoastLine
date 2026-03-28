@@ -379,6 +379,16 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
         </div>
       </div>
 
+      {/* FIRE target explanation — right after summary */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <p className="text-sm text-blue-700">
+          <strong>How this connects to FIRE:</strong> Your goal lifestyle of {formatMoney(goalTotal)}/mo
+          requires <strong>{formatMoney(goalTotal * 12 * 25)}</strong> invested (25x annual spending) to retire.
+          Your predicted lifestyle of {formatMoney(predictedTotal)}/mo requires <strong>{formatMoney(predictedTotal * 12 * 25)}</strong>.
+          Check the FIRE Projections tab to see when you&apos;ll hit each target.
+        </p>
+      </div>
+
       {/* Explanation of how predicted is calculated */}
       {sustainableMonthly !== null && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
@@ -470,16 +480,6 @@ export default function TabRetirementLifestyle({ data, onSaved }: Props) {
             </span>
           </div>
         </div>
-      </div>
-
-      {/* FIRE target explanation */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-sm text-blue-700">
-          <strong>How this connects to FIRE:</strong> Your goal lifestyle of {formatMoney(goalTotal)}/mo
-          requires {formatMoney(goalTotal * 12 * 25)} invested (25x annual spending) to retire.
-          Your predicted lifestyle of {formatMoney(predictedTotal)}/mo requires {formatMoney(predictedTotal * 12 * 25)}.
-          Check the FIRE Projections tab to see when you&apos;ll hit each target.
-        </p>
       </div>
 
       {dirty && (
